@@ -26,6 +26,8 @@
 //   Pipeline Utility Steps
 //   Docker Pipeline
 
+final yaml_filename = ".jenkins-ci.yml"
+
 // ---------------------------------------------------------------------
 // スクリプトを実行する。
 // def script	: 実行するスクリプト一覧 (map)
@@ -201,7 +203,7 @@ def __exec_subproject(def stage_name, def ow_env, def stage_param)
 
 	// サブプロジェクトの設定ファイルを読み込む
 	// Pipeline Utility Steps Pluginの関数を使う
-	yaml = readYaml(file: "${stage_param.subproject}/config.yml")
+	yaml = readYaml(file: "${stage_param.subproject}/${yaml_filename}")
 
 	if (yaml.config.env != null) {
 		__env = yaml.config.env
@@ -317,7 +319,7 @@ node {
 	script {
 		// 設定ファイルを読み込む
 		// Pipeline Utility Steps Pluginの関数を使う
-		yaml = readYaml(file: 'config.yml')
+		yaml = readYaml(file: yaml_filename)
 
 		timestamps {
 			// 環境変数定義がある場合は環境変数を設定する。
