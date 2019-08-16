@@ -1,8 +1,34 @@
 #!groovy
-
+// MIT License
+// 
+// Copyright (c) 2019 t.abe
+// 
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+// 
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+// 
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+//
+// 
+// 必須プラグイン
+//   Pipeline Utility Steps
+//   Docker Pipeline
 
 // ---------------------------------------------------------------------
 // スクリプトを実行する。
+// def script	: 実行するスクリプト一覧 (map)
 // ---------------------------------------------------------------------
 def __exec_script(def script)
 {
@@ -14,15 +40,78 @@ def __exec_script(def script)
 				echo __script.echo
 			} else if (__script.powershell  != null) {
 				powershell __script.sh
+			} else if (__script.docker  != null) {
+				__exec_docker __script.docker
 			}
 		}
 	}
 }
 
+def __exec_docker(def docker_param)
+{
+	// docker buildを行う
+	if (docker_param.command == "build") {
+		if (docker_param.Dockerfile != null) {
+			def param = "-f ${docker_param.Dockerfile} ."
+			docker.build(docker_param.tag, param)
+		} else {
+			docker.build(docker_param.tag)
+		}
+	} else if (docker_param.command == "exec") {
+		// execコマンドであった場合、dockerコンテナを起動してその中でスクリプトを動かす。
+		// startコマンドであった場合、dockerコンテナを起動する。
+		// これはデータベースをテスト用に立ち上げる場合に利用される。
+		if (docker_param.script != null) {
+			def param = [:]
+			param["image"] = docker_param.image
+			if (docker_param.args != null) {
+				param["args"] = docker_param.args
+			}
+			withDockerContainer(param) {
+				__exec_script(docker_param.script)
+			}
+		}
+	} else if (docker_param.command == "run") {
+		// runコマンドであった場合、dockerコンテナを起動する。
+		// これはデータベースをテスト用に立ち上げる場合に利用される。
+		// ここで起動したdockerは
+		if (docker_param.script != null) {
+			if (docker_param.args != null) {
+				docker.image(docker_param.image).withRun(docker_param.args) {
+					__exec_script(docker_param.script)
+				}
+			} else {
+				docker.image(docker_param.image).withRun() {
+					__exec_script(docker_param.script)
+				}
+			}
+		}
+	}
 
+}
+
+// ---------------------------------------------------------------------
+// スクリプトを実行する。(環境変数指定があれば環境変数を設定する)
+// def env		: 実行するスクリプトの環境変数 (list)
+// def stage_param	: 実行するjobのパラメータ (map)
+// ---------------------------------------------------------------------
+def __exec_script_withEnv(def env, def stage_param)
+{
+	// ENV設定に従って設定を行う。
+	if (env != "") {
+		withEnv(env) {
+			__exec_script(stage_param.script)
+		}
+	} else {
+		__exec_script(stage_param.script)
+	}
+}
 
 // ---------------------------------------------------------------------
 // 1つのstageを実行する。
+// def stage_name	: 実行するjobのname (string)
+// def ow_env		: 実行するスクリプトの上書き用環境変数 (list)
+// def stage_param	: 実行するjobのパラメータ (map)
 // ---------------------------------------------------------------------
 def __exec_scripts(def stage_name, def ow_env, def stage_param)
 {
@@ -59,12 +148,14 @@ def __exec_scripts(def stage_name, def ow_env, def stage_param)
 				__env += line
 			}
 
-			if (__env != "") {
-				withEnv(__env) {
-					__exec_script(stage_param.script)
+			// docker設定があれば、dockerを使用する。
+			// Docker Pipelineの関数を使う
+			if (stage_param.docker != null) {
+				withDockerContainer(stage_param.docker) {
+					__exec_script_withEnv(__env, stage_param)
 				}
 			} else {
-				__exec_script(stage_param.script)
+				__exec_script_withEnv(__env, stage_param)
 			}
 		}
 
@@ -87,6 +178,9 @@ def __exec_scripts(def stage_name, def ow_env, def stage_param)
 
 // ---------------------------------------------------------------------
 // 1つのスクリプトの塊を実行する。
+// def stage_name	: 実行するjobのname (string)
+// def ow_env		: 実行するスクリプトの上書き用環境変数 (list)
+// def stage_param	: 実行するjobのパラメータ (map)
 // ---------------------------------------------------------------------
 def __exec_single_stage(def stage_name, def ow_env, def stage_param)
 {
@@ -97,6 +191,9 @@ def __exec_single_stage(def stage_name, def ow_env, def stage_param)
 
 // ---------------------------------------------------------------------
 // 1つのスクリプトの塊を実行する。
+// def stage_name	: 実行するjobのname (string)
+// def ow_env		: 実行するスクリプトの上書き用環境変数 (list)
+// def stage_param	: 実行するjobのパラメータ (map)
 // ---------------------------------------------------------------------
 def __exec_subproject(def stage_name, def ow_env, def stage_param)
 {
