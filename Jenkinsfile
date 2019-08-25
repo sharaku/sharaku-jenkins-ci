@@ -26,8 +26,6 @@
 //   Pipeline Utility Steps
 //   Docker Pipeline
 
-final yaml_filename = ".jenkins-ci.yml"
-
 // ---------------------------------------------------------------------
 // スクリプトを実行する。
 // def script	: 実行するスクリプト一覧 (map)
@@ -37,13 +35,33 @@ def __exec_script(def script)
 	if (script != null) {
 		script.each { __script ->
 			if (__script.sh != null) {
+				// shellを実行する
 				sh __script.sh
 			} else if (__script.echo  != null) {
+				// echoを実行する
 				echo __script.echo
 			} else if (__script.powershell  != null) {
+				// powershellを実行する
 				powershell __script.sh
 			} else if (__script.docker  != null) {
+				// dockerを実行する
 				__exec_docker __script.docker
+			} else if (__script.archiveArtifacts  != null) {
+				// 成果物をアーカイブする
+				archiveArtifacts __script.archiveArtifacts
+			} else if (__script.stash  != null) {
+				// 成果物をstashする
+				stash __script.stash
+			} else if (__script.unstash  != null) {
+				// 成果物をunstashする
+				unstash __script.stash
+			} else if (__script.error  != null) {
+				// エラーさせる
+				error __script.error
+			} else if (__script.failure  != null) {
+				// エラーさせる
+				echo __script.failure
+				currentBuild.result = 'FAILURE'
 			}
 		}
 	}
@@ -102,10 +120,40 @@ def __exec_script_withEnv(def env, def stage_param)
 	// ENV設定に従って設定を行う。
 	if (env != "") {
 		withEnv(env) {
-			__exec_script(stage_param.script)
+			try {
+				__exec_script(stage_param.script)
+				if (stage_param.post != null && stage_param.post.success != null) {
+					__exec_script(stage_param.post.success)
+				}
+			} catch (exc) {
+				if (stage_param.post != null && stage_param.post.failure != null) {
+					__exec_script(stage_param.post.failure)
+				} else {
+					currentBuild.result = 'FAILURE'
+				}
+			} finally {
+				if (stage_param.post != null && stage_param.post.always != null) {
+					__exec_script(stage_param.post.always)
+				}
+			}
 		}
 	} else {
-		__exec_script(stage_param.script)
+		try {
+			__exec_script(stage_param.script)
+			if (stage_param.post != null && stage_param.post.success != null) {
+				__exec_script(stage_param.post.success)
+			}
+		} catch (exc) {
+			if (stage_param.post != null && stage_param.post.failure != null) {
+				__exec_script(stage_param.post.failure)
+			} else {
+				currentBuild.result = 'FAILURE'
+			}
+		} finally {
+			if (stage_param.post != null && stage_param.post.always != null) {
+				__exec_script(stage_param.post.always)
+			}
+		}
 	}
 }
 
@@ -125,6 +173,16 @@ def __exec_scripts(def stage_name, def ow_env, def stage_param)
 		_node = "master"
 	} else {
 		_node = stage_param.node
+	}
+
+	// もし必須ではない場合は、nodeの存在をチェック
+	if (stage_param.required != null && stage_param.required == false) {
+		def _nodelist = []
+		_nodelist = nodesByLabel _node
+		if (_nodelist.size() == 0) {
+			echo "SKIP '${stage_name}' stage."
+			return 1
+		}
 	}
 
 	node (_node) {
@@ -174,19 +232,7 @@ def __exec_scripts(def stage_name, def ow_env, def stage_param)
 			stash allowEmpty: true, includes: stage_param.result, name: "____result_${stage_name}____"
 		}
 	}
-}
-
-
-
-// ---------------------------------------------------------------------
-// 1つのスクリプトの塊を実行する。
-// def stage_name	: 実行するjobのname (string)
-// def ow_env		: 実行するスクリプトの上書き用環境変数 (list)
-// def stage_param	: 実行するjobのパラメータ (map)
-// ---------------------------------------------------------------------
-def __exec_single_stage(def stage_name, def ow_env, def stage_param)
-{
-	__exec_scripts(stage_name, ow_env, stage_param)
+	return 0
 }
 
 
@@ -200,10 +246,11 @@ def __exec_single_stage(def stage_name, def ow_env, def stage_param)
 def __exec_subproject(def stage_name, def ow_env, def stage_param)
 {
 	def __env = []
+	def __yaml = ".jenkins-ci.yml"
 
 	// サブプロジェクトの設定ファイルを読み込む
 	// Pipeline Utility Steps Pluginの関数を使う
-	yaml = readYaml(file: "${stage_param.subproject}/${yaml_filename}")
+	yaml = readYaml(file: "${stage_param.subproject}/${__yaml}")
 
 	if (yaml.config.env != null) {
 		__env = yaml.config.env
@@ -258,9 +305,11 @@ def __exec_stages(def stages, def stage_list)
 					} else if (stage_list[__job].subproject != null) {
 						__exec_subproject(__job, __ow_env, stage_list[__job])
 					} else {
-						__exec_single_stage(__job, __ow_env, stage_list[__job])
-						if (stage_list[__job].result != null) {
-							unstash "____result_${__job}____"
+						def res = __exec_scripts(__job, __ow_env, stage_list[__job])
+						if (res == 0) {
+							if (stage_list[__job].result != null) {
+								unstash "____result_${__job}____"
+							}
 						}
 					}
 				}
@@ -286,14 +335,29 @@ def __exec_parallel(def stage_name, def stage_list, def ow_env, def stage_param)
 				} else if (stage_list[__line].subproject != null) {
 					__exec_subproject(__line, ow_env, stage_list[__line])
 				} else {
-					__exec_single_stage(__line, ow_env, stage_list[__line])
+					__exec_scripts(__line, ow_env, stage_list[__line])
 				}
 			}
 		}
 	}
 
 	stage(stage_name) {
-		parallel(__parallel)
+		try {
+			parallel(__parallel)
+			if (stage_param.post != null && stage_param.post.success != null) {
+				__exec_script(stage_param.post.success)
+			}
+		} catch (exc) {
+			if (stage_param.post != null && stage_param.post.failure != null) {
+				__exec_script(stage_param.post.failure)
+			} else {
+				currentBuild.result = 'FAILURE'
+			}
+		} finally {
+			if (stage_param.post != null && stage_param.post.always != null) {
+				__exec_script(stage_param.post.always)
+			}
+		}
 	}
 
 	stage_param.parallel.each { __line ->
@@ -319,7 +383,7 @@ node {
 	script {
 		// 設定ファイルを読み込む
 		// Pipeline Utility Steps Pluginの関数を使う
-		yaml = readYaml(file: yaml_filename)
+		yaml = readYaml(file: ".jenkins-ci.yml")
 
 		timestamps {
 			// 環境変数定義がある場合は環境変数を設定する。
