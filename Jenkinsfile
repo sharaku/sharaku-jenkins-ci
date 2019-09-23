@@ -22,9 +22,12 @@
 // SOFTWARE.
 //
 // 
-// 必須プラグイン
+// 必須プラグイン:
 //   Pipeline Utility Steps
+// Docker機能使用時に必要:
 //   Docker Pipeline
+// 解析機能を使用するときに必要:
+//   Warnings Next Generation
 
 // ---------------------------------------------------------------------
 // スクリプトを実行する。
@@ -369,6 +372,54 @@ def __exec_parallel(def stage_name, def stage_list, def ow_env, def stage_param)
 
 
 
+// ---------------------------------------------------------------------
+// 実行後の集計処理
+// ---------------------------------------------------------------------
+def __issues(def yaml)
+{
+	def __tools = [:]
+	def __tool_one = ""
+
+	if (yaml.config.issues == null) {
+		return
+	}
+
+	// junitを実行する
+	if (yaml.config.issues.junit != null) {
+		junit yaml.config.issues.junit
+	}
+
+	// --------------------------------------
+	// Warnings Next Generation プラグイン
+	// --------------------------------------
+	// cmakeを実行する
+	if (yaml.config.issues.cmake != null) {
+		recordIssues(aggregatingResults: true, tools: [cmake( yaml.config.issues.cmake )])
+	}
+	// cppcheckを実行する
+	if (yaml.config.issues.cppcheck != null) {
+		recordIssues(aggregatingResults: true, tools: [cppCheck( yaml.config.issues.cppcheck )])
+	}
+	// cpplintを実行する
+	if (yaml.config.issues.cpplint != null) {
+		recordIssues(aggregatingResults: true, tools: [cppLint( yaml.config.issues.cpplint )])
+	}
+	// doxygenを実行する
+	if (yaml.config.issues.doxygen != null) {
+		recordIssues(aggregatingResults: true, tools: [doxygen( yaml.config.issues.doxygen )])
+	}
+	// gcc3を実行する
+	if (yaml.config.issues.gcc3 != null) {
+		recordIssues(aggregatingResults: true, tools: [gcc3( yaml.config.issues.gcc3 )])
+	}
+	// gccを実行する
+	if (yaml.config.issues.gcc != null) {
+		recordIssues(aggregatingResults: true, tools: [gcc( yaml.config.issues.gcc )])
+	}
+}
+
+
+
 // *********************************************************************
 // ここからがエントリ。
 // *********************************************************************
@@ -376,7 +427,6 @@ node {
 	def yaml
 
 	// clean checkoutする
-	deleteDir()
 	checkout scm
 	stash name: '____initialize____'
 
@@ -424,10 +474,7 @@ node {
 
 		}
 
-		// junitを実行する
-		if (yaml.config.junit != null) {
-			junit yaml.config.junit
-		}
+		__issues(yaml)
 
 		// archiveArtifactsを使って成果物を保存する
 		if (yaml.config.archiveArtifacts != null) {
