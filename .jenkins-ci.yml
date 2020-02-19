@@ -1,0 +1,40 @@
+# sharaku-jenkins-ciテストセット
+# この .jenkins-ci.yml は動作テスト兼サンプル用です。
+config:
+  env:
+    - env_global_A=0
+    - env_global_B=1
+
+# ステージ
+stages:
+  - job1
+  - job2
+  - job3
+
+# job1 -> 環境変数動作確認。
+# job2 -> サブディレクトリ動作確認。
+# job3 -> 並列実行動作確認。
+stage:
+  job1:
+    node: master
+    env:
+     - env_global_B="job1_over_write"
+     - env_local_A="C"
+     - env_local_B="D"
+    script:
+     - sh: echo "job1 env_global_A=${env_global_A} env_global_B=${env_global_B} env_local_A=${env_local_A} env_local_B=${env_local_B}"
+
+  job2:
+    subproject: test
+
+  job3:
+    parallel:
+     - job1
+     - job2
+    post:
+      always:
+       - sh: echo "job3 post always"
+      success:
+       - sh: echo "job3 post success"
+      failure:
+       - sh: echo "job3 post failure"

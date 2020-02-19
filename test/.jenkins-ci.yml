@@ -1,0 +1,20 @@
+# sharaku-jenkins-ciテストセット
+config:
+  env:
+    - env_global_A=0
+    - env_global_B=1
+
+# ステージ
+stages:
+ - job1
+
+# job1 -> 環境変数動作確認。
+stage:
+  job1:
+    node: master
+    env:
+     - env_global_B="job1_over_write"
+     - env_local_A="C"
+     - env_local_B="D"
+    script:
+     - sh: echo "subdir job1 env_global_A=${env_global_A} env_global_B=${env_global_B} env_local_A=${env_local_A} env_local_B=${env_local_B}"
