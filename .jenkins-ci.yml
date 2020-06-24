@@ -7,34 +7,34 @@ config:
 
 # ステージ
 stages:
-  - job1
-  - job2
-  - job3
+  - stage1
+  - stage2
+  - stage3
 
-# job1 -> 環境変数動作確認。
-# job2 -> サブディレクトリ動作確認。
-# job3 -> 並列実行動作確認。
+# stage1 -> 環境変数動作確認。
+# stage2 -> サブディレクトリ動作確認。
+# stage3 -> 並列実行動作確認。
 stage:
-  job1:
+  stage1:
     node: master
     env:
-     - env_global_B="job1_over_write"
+     - env_global_B="stage1_over_write"
      - env_local_A="C"
      - env_local_B="D"
     script:
-     - sh: echo "job1 env_global_A=${env_global_A} env_global_B=${env_global_B} env_local_A=${env_local_A} env_local_B=${env_local_B}"
+     - sh: echo "stage1 env_global_A=${env_global_A} env_global_B=${env_global_B} env_local_A=${env_local_A} env_local_B=${env_local_B}"
 
-  job2:
+  stage2:
     subproject: test
 
-  job3:
+  stage3:
     parallel:
-     - job1
-     - job2
+     - stage1
+     - stage2
     post:
       always:
-       - sh: echo "job3 post always"
+       - sh: echo "stage3 post always"
       success:
-       - sh: echo "job3 post success"
+       - sh: echo "stage3 post success"
       failure:
-       - sh: echo "job3 post failure"
+       - sh: echo "stage3 post failure"
